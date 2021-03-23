@@ -3,6 +3,7 @@
 
 import * as React from 'react'
 import {Switch} from '../switch'
+import warning from 'warning';
 
 const callAll = (...fns) => (...args) => fns.forEach(fn => fn?.(...args))
 
@@ -25,55 +26,83 @@ function toggleReducer(state, {type, initialState}) {
   }
 }
 
+function useControlledSwitchWarning(
+  isControlled,
+  componentName,
+  propName
+) {
+  // Create a ref with the initial value of whether the component
+  // is controlled, to compare when the component is updated. Then use
+  // it to compare with the new version of "isControlled"
+  const { current: wasControlled } = React.useRef(isControlled);
+  React.useEffect(() => {
+    warning(
+      !(isControlled && !wasControlled),
+      `${componentName} is changing from uncontrolled to controlled. Components should not switch from uncontrolled to controlled (or vice versa). Decide between using a controlled or uncontrolled ${componentName} for the lifetime of the component. Check the '${propName}'' prop.`
+    )
+    warning(
+      !(!isControlled && wasControlled),
+      `${componentName} is changing from controlled to uncontrolled. Components should not switch from controlled to uncontrolled (or vice versa). Decide between using a controlled or uncontrolled ${componentName} for the lifetime of the component. Check the '${propName}'' prop.`
+    )
+  }, [componentName, isControlled, propName, wasControlled])
+}
+
+function useOnChangeReadOnlyWarning(
+  controlPropValue,
+  controlPropName,
+  componentName,
+  hasOnChange,
+  readOnly,
+  readOnlyProp,
+  initialValueProp,
+  onChangeProp
+) {
+  const isControlled = controlPropValue != null;
+  React.useEffect(() => {
+    warning(
+      !(!hasOnChange && isControlled && !readOnly),
+      `An ${controlPropName} prop was provided to ${componentName} without an ${onChangeProp} handler. This will render a read-only ${controlPropName}. If you want it to be mutable, use ${initialValueProp}. Otherwise, set either ${onChangeProp} or ${readOnlyProp}.`,
+    )
+  }, [componentName, controlPropName, hasOnChange, initialValueProp, isControlled, onChangeProp, readOnly, readOnlyProp]);
+}
+
 function useToggle({
   initialOn = false,
   reducer = toggleReducer,
-  // 🐨 add an `onChange` prop.
   onChange,
-  // 🐨 add an `on` option here
-  // 💰 you can alias it to `controlledOn` to avoid "variable shadowing."
-  on: controlledOn
+  on: controlledOn,
+  // Add support for readOnly components
+  readOnly = false
+
 } = {}) {
   const {current: initialState} = React.useRef({on: initialOn})
   const [state, dispatch] = React.useReducer(reducer, initialState)
-  // 🐨 determine whether on is controlled and assign that to `onIsControlled`
-  // 💰 `controlledOn != null`
-  const onIsControlled = controlledOn != null;
 
-  // 🐨 Replace the next line with assigning `on` to `controlledOn` if
-  // `onIsControlled`, otherwise, it should be `state.on`.
-  // const {on} = state
+  const onIsControlled = controlledOn != null;
   const on = onIsControlled ? controlledOn : state.on;
 
-  // We want to call `onChange` any time we need to make a state change, but we
-  // only want to call `dispatch` if `!onIsControlled` (otherwise we could get
-  // unnecessary renders).
-  // 🐨 To simplify things a bit, let's make a `dispatchWithOnChange` function
-  // right here. This will:
-  // 1. accept an action
-  // 2. if onIsControlled is false, call dispatch with that action
-  // 3. Then call `onChange` with our "suggested changes" and the action.
+  if(process.env.NODE_ENV !== 'production') {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    useControlledSwitchWarning(onIsControlled, 'useToggle', 'on');
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    useOnChangeReadOnlyWarning(
+      controlledOn,
+      'on',
+      'useToggle',
+      !!onChange,
+      readOnly,
+      'readOnly',
+      'initialOn',
+      'onChange'
+    );
+  }
+
   function dispatchWithOnChange(action) {
     if(!onIsControlled) {
       dispatch(action);
     }
     onChange && onChange(reducer({...state, on}, action), action);
   }
- 
-  // 🦉 "Suggested changes" refers to: the changes we would make if we were
-  // managing the state ourselves. This is similar to how a controlled <input />
-  // `onChange` callback works. When your handler is called, you get an event
-  // which has information about the value input that _would_ be set to if that
-  // state were managed internally.
-  // So how do we determine our suggested changes? What code do we have to
-  // calculate the changes based on the `action` we have here? That's right!
-  // The reducer! So if we pass it the current state and the action, then it
-  // should return these "suggested changes!"
-  //
-  // 💰 Sorry if Olivia the Owl is cryptic. Here's what you need to do for that onChange call:
-  // `onChange(reducer({...state, on}, action), action)`
-  // 💰 Also note that user's don't *have* to pass an `onChange` prop (it's not required)
-  // so keep that in mind when you call it! How could you avoid calling it if it's not passed?
 
   // make these call `dispatchWithOnChange` instead
   const toggle = () => dispatchWithOnChange({type: actionTypes.toggle})
@@ -103,14 +132,14 @@ function useToggle({
   }
 }
 
-function Toggle({on: controlledOn, onChange}) {
-  const {on, getTogglerProps} = useToggle({on: controlledOn, onChange})
-  const props = getTogglerProps({on})
+function Toggle({on: controlledOn, onChange, readOnly}) {
+  const { on, getTogglerProps } = useToggle({on: controlledOn, onChange, readOnly})
+  const props = getTogglerProps({ on });
   return <Switch {...props} />
 }
 
 function App() {
-  const [bothOn, setBothOn] = React.useState(false)
+  const [bothOn, setBothOn] = React.useState(false);
   const [timesClicked, setTimesClicked] = React.useState(0)
 
   function handleToggleChange(state, action) {
@@ -129,7 +158,7 @@ function App() {
   return (
     <div>
       <div>
-        <Toggle on={bothOn} onChange={handleToggleChange} />
+        <Toggle on={bothOn} />
         <Toggle on={bothOn} onChange={handleToggleChange} />
       </div>
       {timesClicked > 4 ? (

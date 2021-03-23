@@ -3,6 +3,7 @@
 
 import * as React from 'react'
 import {Switch} from '../switch'
+import warning from 'warning';
 
 const callAll = (...fns) => (...args) => fns.forEach(fn => fn?.(...args))
 
@@ -28,31 +29,43 @@ function toggleReducer(state, {type, initialState}) {
 function useToggle({
   initialOn = false,
   reducer = toggleReducer,
-  // 🐨 add an `onChange` prop.
   onChange,
-  // 🐨 add an `on` option here
-  // 💰 you can alias it to `controlledOn` to avoid "variable shadowing."
-  on: controlledOn
+  on: controlledOn,
+  // Add support for readOnly components
+  readOnly = false
+
 } = {}) {
   const {current: initialState} = React.useRef({on: initialOn})
   const [state, dispatch] = React.useReducer(reducer, initialState)
-  // 🐨 determine whether on is controlled and assign that to `onIsControlled`
-  // 💰 `controlledOn != null`
-  const onIsControlled = controlledOn != null;
 
-  // 🐨 Replace the next line with assigning `on` to `controlledOn` if
-  // `onIsControlled`, otherwise, it should be `state.on`.
-  // const {on} = state
+  const onIsControlled = controlledOn != null;
   const on = onIsControlled ? controlledOn : state.on;
 
-  // We want to call `onChange` any time we need to make a state change, but we
-  // only want to call `dispatch` if `!onIsControlled` (otherwise we could get
-  // unnecessary renders).
-  // 🐨 To simplify things a bit, let's make a `dispatchWithOnChange` function
-  // right here. This will:
-  // 1. accept an action
-  // 2. if onIsControlled is false, call dispatch with that action
-  // 3. Then call `onChange` with our "suggested changes" and the action.
+  // Create a ref with the initial value of whether the component
+  // is control, to compare when the component is upadted. Then use
+  // it to compare with the new version of "onIsControlled"
+  const { current: onWasControlled } = React.useRef(onIsControlled);
+  React.useEffect(() => {
+    warning(
+      !(onIsControlled && !onWasControlled),
+      "use Toggle is changing from uncontrolled to controlled. Components should not switch from uncontrolled to controlled (or vice versa). Decide between using a controlled or uncontrolled useToggle for the lifetime of the component. Check the 'on' prop."
+    )
+    warning(
+      !(!onIsControlled && onWasControlled),
+      "use Toggle is changing from uncontrolled to controlled. Components should not switch from controlled to uncontrolled (or vice versa). Decide between using a controlled or uncontrolled useToggle for the lifetime of the component. Check the 'on' prop."
+    )
+  })
+
+  // Check if onChange is defined with "hasOnChange" and check if the component
+  // is controlled. If the component is controlled, but has no "onChange", display
+  // the warning. Also, don't show the warning if the optional "readOnly" prop
+  // is set to true.
+  const hasOnChange = !!onChange;
+  React.useEffect(() => {
+    warning(!(!hasOnChange && onIsControlled && !readOnly), "Warning: You provided an on prop to the Toggle but no onChange prop. This will render a read only component.")
+  }, [hasOnChange, onIsControlled, readOnly])
+
+
   function dispatchWithOnChange(action) {
     if(!onIsControlled) {
       dispatch(action);
@@ -103,9 +116,9 @@ function useToggle({
   }
 }
 
-function Toggle({on: controlledOn, onChange}) {
-  const {on, getTogglerProps} = useToggle({on: controlledOn, onChange})
-  const props = getTogglerProps({on})
+function Toggle({on: controlledOn, onChange, readOnly}) {
+  const { on, getTogglerProps } = useToggle({on: controlledOn, onChange, readOnly})
+  const props = getTogglerProps({ on });
   return <Switch {...props} />
 }
 
@@ -129,7 +142,7 @@ function App() {
   return (
     <div>
       <div>
-        <Toggle on={bothOn} onChange={handleToggleChange} />
+        <Toggle on={bothOn} />
         <Toggle on={bothOn} onChange={handleToggleChange} />
       </div>
       {timesClicked > 4 ? (

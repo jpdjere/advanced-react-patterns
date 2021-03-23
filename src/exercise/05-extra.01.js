@@ -4,14 +4,19 @@
 import * as React from 'react'
 import {Switch} from '../switch'
 
+const ACTIONS = {
+  TOGGLE: 'toggle',
+  RESET: 'reset',
+}
+
 const callAll = (...fns) => (...args) => fns.forEach(fn => fn?.(...args))
 
 function toggleReducer(state, {type, initialState}) {
   switch (type) {
-    case 'toggle': {
+    case ACTIONS.TOGGLE: {
       return {on: !state.on}
     }
-    case 'reset': {
+    case ACTIONS.RESET: {
       return initialState
     }
     default: {
@@ -21,11 +26,13 @@ function toggleReducer(state, {type, initialState}) {
 }
 
 // 🐨 add a new option called `reducer` that defaults to `toggleReducer`
+
+// JP: So the user can either use the default implementation (with the reducer
+// that was created with the component) or use it's own reducer to override some
+// functionality (but not all, as seen below). If the user just wants to use
+// the default functionality, the components defaults to its standard reducer.
 function useToggle({initialOn = false, reducer = toggleReducer} = {}) {
   const {current: initialState} = React.useRef({on: initialOn})
-  // 🐨 instead of passing `toggleReducer` here, pass the `reducer` that's
-  // provided as an option
-  // ... and that's it! Don't forget to check the 💯 extra credit!
   const [state, dispatch] = React.useReducer(reducer, initialState)
   const {on} = state
 
@@ -60,21 +67,15 @@ function App() {
   const [timesClicked, setTimesClicked] = React.useState(0)
   const clickedTooMuch = timesClicked >= 4
 
+  // JP: The user can create it's own customer reducer to override
+  // certain functionality of the reducer, while...
   function toggleStateReducer(state, action) {
-    switch (action.type) {
-      case 'toggle': {
-        if (clickedTooMuch) {
-          return {on: state.on}
-        }
-        return {on: !state.on}
-      }
-      case 'reset': {
-        return {on: false}
-      }
-      default: {
-        throw new Error(`Unsupported type: ${action.type}`)
-      }
+    if (action.type === ACTIONS.TOGGLE && timesClicked >= 4) {
+      return {on: state.on}
     }
+    // ... while letting pass and falling back to the standard reducer
+    // for all other type of behaviours and actions.
+    return toggleReducer(state, action)
   }
 
   const {on, getTogglerProps, getResetterProps} = useToggle({
